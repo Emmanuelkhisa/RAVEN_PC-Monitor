@@ -2,6 +2,7 @@
 
 try {
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
+    Initialize-PcMonitorDataPaths -BasePath $PSScriptRoot | Out-Null
 } catch {
     Write-Error $_
     exit 1
@@ -85,6 +86,7 @@ Time: $time
 $($alerts -join "`n`n---`n`n")
 "@
             Send-PcMonitorTelegramMessage -Message $message -Config $config
+            Write-PcMonitorActivity -Category "network" -Action "network-alert" -Detail "Alerts: $($alerts.Count)" -BasePath $PSScriptRoot
         }
     } catch {
         Write-Warning "Failed to compare network states: $($_.Exception.Message)"

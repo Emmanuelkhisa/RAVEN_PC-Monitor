@@ -5,7 +5,6 @@ This guide gets the project running with the supported install flow.
 ## Prerequisites
 
 - Windows 10 or Windows 11
-- Administrator access
 - Telegram account
 - Internet access
 
@@ -29,21 +28,12 @@ notepad config.json
 ```
 
 Replace the placeholder values with your bot token and chat ID.
-You can leave `installPath` as the placeholder value. The setup script will replace it with the current project folder automatically.
+You can leave `installPath` as the placeholder value. The setup wizard will replace it with the current project folder automatically.
+If you want camera and microphone commands, keep the device names filled in. `ffmpeg` is now installed automatically by setup when needed.
 
-## 4. Enable auditing
+## 4. Run the Raven setup wizard
 
-Run PowerShell as Administrator:
-
-```powershell
-auditpol /set /subcategory:"Logon" /success:enable /failure:enable
-auditpol /set /subcategory:"Process Creation" /success:enable
-auditpol /set /subcategory:"Other Logon/Logoff Events" /success:enable /failure:enable
-```
-
-## 5. Install the monitoring tasks
-
-Run PowerShell as Administrator in the project directory:
+Run this once in the project directory:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File ".\setup_tasks.ps1"
@@ -51,13 +41,18 @@ powershell.exe -ExecutionPolicy Bypass -File ".\setup_tasks.ps1"
 
 The script will:
 
+- Show the Raven banner
 - Detect and save the install path
+- Request Administrator approval automatically
+- Validate the Telegram bot token
+- Install `ffmpeg` automatically if it is missing
+- Enable the required Windows auditing policies
 - Refresh all task XML files
 - Install the six supported scheduled tasks
 
 Do not edit the XML files in `tasks/` manually. They are committed as templates and localized by `setup_tasks.ps1`.
 
-## 6. Test the bot manually
+## 5. Test the bot manually
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File ".\bot_commands.ps1"
@@ -69,7 +64,7 @@ Then send:
 2. `/status`
 3. `/screenshot`
 
-## 7. Verify Task Scheduler
+## 6. Verify Task Scheduler
 
 1. Press `Win + R`
 2. Run `taskschd.msc`
@@ -83,7 +78,7 @@ Then send:
 1. Confirm `config.json` exists.
 2. Confirm all `.ps1` files are still in the project directory.
 3. Confirm `installPath` in `config.json` is correct or still a placeholder.
-4. Re-run `setup_tasks.ps1` from an Administrator PowerShell window.
+4. Re-run `setup_tasks.ps1` and approve the Administrator prompt.
 
 ### Bot does not respond
 

@@ -7,6 +7,7 @@ param(
 
 try {
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
+    Initialize-PcMonitorDataPaths -BasePath $PSScriptRoot | Out-Null
 } catch {
     Write-Error $_
     exit 1
@@ -184,6 +185,7 @@ WARNING: Someone attempted to clear event logs.
 if (-not [string]::IsNullOrWhiteSpace($message)) {
     try {
         Send-PcMonitorTelegramMessage -Message $message -Config $config
+        Write-PcMonitorActivity -Category "event" -Action "event-alert" -Detail "Event ID $($event.Id)" -BasePath $PSScriptRoot
         Write-Host "Alert sent successfully for Event ID $($event.Id) at $time"
         exit 0
     } catch {

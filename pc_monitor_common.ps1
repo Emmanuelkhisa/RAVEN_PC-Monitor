@@ -51,6 +51,332 @@ function Save-PcMonitorConfig {
     return $configPath
 }
 
+function Write-PcMonitorBanner {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "================================================" -ForegroundColor Cyan
+    Write-Host "  RAVEN PC Monitor - Setup Wizard" -ForegroundColor Cyan
+    Write-Host "================================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    $banner = @'
+           @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%#*+++++**#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%+-------------------+%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*---------------------------#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#=-------------------------------+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*-----------------------------@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@+---------------=+%@@@@@@@@@*---+%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*-------------------=@@@@@@@@#-------=@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=---------------------=@@@@@%-----------#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#------------------------------------------%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#-------------------------------------------+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%--------------------------------------------+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=---+%-------------------------=#@@@@@@@@@*=-%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*-+@@@------------------------+@@@@@@@@@@@@@@%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%---------------*+------#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@%----------=#@@=-------=@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=-------=@@@#---------%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@------%@@@*----------%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=---@@@@%-----------=@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@+-#@@@@=------------*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@=-------------=#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#=------------=%@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+'@
+
+    Write-Host $banner -ForegroundColor DarkGray
+    Write-Host "
+                                                            _   _   _   _   _  
+
+                                                          ( R | A | V | E | N )
+                                                            _   _   _   _   _ 
+" -ForegroundColor White
+    Write-Host "@by emmanuelkhisa" -ForegroundColor DarkCyan
+    Write-Host ""
+}
+
+function Test-PcMonitorTelegramConfiguration {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $config = Get-PcMonitorConfig -BasePath $BasePath
+    $result = Invoke-RestMethod -Uri "https://api.telegram.org/bot$($config.botToken)/getMe" -Method Get -ErrorAction Stop
+    if (-not $result.ok) {
+        throw "Telegram bot validation failed."
+    }
+
+    return $result.result
+}
+
+function Get-PcMonitorDataPath {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot,
+        [string]$ChildPath
+    )
+
+    $dataPath = Join-Path $BasePath "data"
+    if (-not [string]::IsNullOrWhiteSpace($ChildPath)) {
+        return Join-Path $dataPath $ChildPath
+    }
+
+    return $dataPath
+}
+
+function Initialize-PcMonitorDataPaths {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $paths = @(
+        (Get-PcMonitorDataPath -BasePath $BasePath),
+        (Get-PcMonitorDataPath -BasePath $BasePath -ChildPath "incoming"),
+        (Get-PcMonitorDataPath -BasePath $BasePath -ChildPath "outgoing"),
+        (Get-PcMonitorDataPath -BasePath $BasePath -ChildPath "logs")
+    )
+
+    foreach ($path in $paths) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            [void](New-Item -ItemType Directory -Path $path -Force)
+        }
+    }
+
+    return $paths
+}
+
+function Get-PcMonitorActionLogPath {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    Initialize-PcMonitorDataPaths -BasePath $BasePath | Out-Null
+    return Get-PcMonitorDataPath -BasePath $BasePath -ChildPath "logs\activity.log"
+}
+
+function Write-PcMonitorActivity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Category,
+        [Parameter(Mandatory = $true)]
+        [string]$Action,
+        [string]$Detail = "",
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $entry = [pscustomobject]@{
+        Timestamp = (Get-Date).ToString("s")
+        Computer  = $env:COMPUTERNAME
+        User      = $env:USERNAME
+        Category  = $Category
+        Action    = $Action
+        Detail    = $Detail
+    } | ConvertTo-Json -Compress
+
+    Add-Content -LiteralPath (Get-PcMonitorActionLogPath -BasePath $BasePath) -Value $entry -Encoding UTF8
+}
+
+function Get-PcMonitorRecentActivity {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot,
+        [int]$Count = 10
+    )
+
+    $logPath = Get-PcMonitorActionLogPath -BasePath $BasePath
+    if (-not (Test-Path -LiteralPath $logPath)) {
+        return @()
+    }
+
+    $entries = Get-Content -LiteralPath $logPath -Encoding UTF8 |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Last $Count |
+        ForEach-Object {
+            try {
+                $_ | ConvertFrom-Json
+            } catch {
+            }
+        }
+
+    return @($entries | Where-Object { $null -ne $_ } | Sort-Object Timestamp -Descending)
+}
+
+function Get-PcMonitorKnownLocations {
+    [CmdletBinding()]
+    param()
+
+    return [ordered]@{
+        desktop   = [Environment]::GetFolderPath("Desktop")
+        documents = [Environment]::GetFolderPath("MyDocuments")
+        downloads = Join-Path $env:USERPROFILE "Downloads"
+        pictures  = [Environment]::GetFolderPath("MyPictures")
+        temp      = $env:TEMP
+    }
+}
+
+function Get-PcMonitorFfmpegPath {
+    [CmdletBinding()]
+    param(
+        [psobject]$Config
+    )
+
+    if ($Config -and ($Config.PSObject.Properties.Name -contains "ffmpegPath") -and -not [string]::IsNullOrWhiteSpace($Config.ffmpegPath) -and (Test-Path -LiteralPath $Config.ffmpegPath)) {
+        return (Resolve-Path -LiteralPath $Config.ffmpegPath).Path
+    }
+
+    $command = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) {
+        return $command.Source
+    }
+
+    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (Test-Path -LiteralPath $wingetRoot) {
+        $wingetMatch = Get-ChildItem -LiteralPath $wingetRoot -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+        if ($wingetMatch) {
+            return $wingetMatch
+        }
+    }
+
+    return $null
+}
+
+function Install-PcMonitorFfmpeg {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $config = Get-PcMonitorConfig -BasePath $BasePath
+    $existingPath = Get-PcMonitorFfmpegPath -Config $config
+    if ($existingPath) {
+        if (($config.PSObject.Properties.Name -contains "ffmpegPath")) {
+            $config.ffmpegPath = $existingPath
+        } else {
+            $config | Add-Member -NotePropertyName "ffmpegPath" -NotePropertyValue $existingPath
+        }
+        Save-PcMonitorConfig -Config $config -BasePath $BasePath | Out-Null
+        return $existingPath
+    }
+
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        throw "winget is required to install ffmpeg automatically."
+    }
+
+    & $winget.Source install --id Gyan.FFmpeg --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Automatic ffmpeg installation failed with exit code $LASTEXITCODE."
+    }
+
+    $updatedConfig = Get-PcMonitorConfig -BasePath $BasePath
+    $installedPath = Get-PcMonitorFfmpegPath -Config $updatedConfig
+    if (-not $installedPath) {
+        throw "ffmpeg was installed but no executable path was detected."
+    }
+
+    if (($updatedConfig.PSObject.Properties.Name -contains "ffmpegPath")) {
+        $updatedConfig.ffmpegPath = $installedPath
+    } else {
+        $updatedConfig | Add-Member -NotePropertyName "ffmpegPath" -NotePropertyValue $installedPath
+    }
+
+    Save-PcMonitorConfig -Config $updatedConfig -BasePath $BasePath | Out-Null
+    return $installedPath
+}
+
+function Enable-PcMonitorAuditing {
+    [CmdletBinding()]
+    param()
+
+    $commands = @(
+        @("/set", '/subcategory:"Logon"', "/success:enable", "/failure:enable"),
+        @("/set", '/subcategory:"Process Creation"', "/success:enable"),
+        @("/set", '/subcategory:"Other Logon/Logoff Events"', "/success:enable", "/failure:enable"),
+        @("/set", '/subcategory:"File System"', "/success:enable")
+    )
+
+    foreach ($commandArgs in $commands) {
+        & auditpol @commandArgs 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to configure auditing with: auditpol $($commandArgs -join ' ')"
+        }
+    }
+}
+
+function Stop-PcMonitorProcesses {
+    [CmdletBinding()]
+    param()
+
+    $patterns = @(
+        "bot_commands.ps1",
+        "event_monitor.ps1",
+        "performance_monitor.ps1",
+        "network_monitor.ps1",
+        "daily_report.ps1"
+    )
+
+    $processes = Get-CimInstance Win32_Process -Filter "name = 'powershell.exe'" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $commandLine = [string]$_.CommandLine
+            foreach ($pattern in $patterns) {
+                if ($commandLine -match [regex]::Escape($pattern)) {
+                    return $true
+                }
+            }
+            return $false
+        }
+
+    foreach ($process in @($processes)) {
+        try {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+        } catch {
+        }
+    }
+}
+
+function Resolve-PcMonitorPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputPath,
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $trimmedPath = $InputPath.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmedPath)) {
+        throw "Path cannot be empty."
+    }
+
+    $knownLocations = Get-PcMonitorKnownLocations
+    foreach ($alias in $knownLocations.Keys) {
+        if ($trimmedPath -ieq $alias) {
+            return [System.IO.Path]::GetFullPath($knownLocations[$alias])
+        }
+
+        if ($trimmedPath -match ("^(?i){0}[\\/](.+)$" -f [regex]::Escape($alias))) {
+            return [System.IO.Path]::GetFullPath((Join-Path $knownLocations[$alias] $Matches[1]))
+        }
+    }
+
+    if ([System.IO.Path]::IsPathRooted($trimmedPath)) {
+        return [System.IO.Path]::GetFullPath($trimmedPath)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $BasePath $trimmedPath))
+}
+
 function Get-PcMonitorInstallPath {
     [CmdletBinding()]
     param(
@@ -142,6 +468,103 @@ function Send-PcMonitorTelegramPhoto {
             $handler.Dispose()
         }
     }
+}
+
+function Send-PcMonitorTelegramDocument {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [psobject]$Config,
+        [string]$Caption = ""
+    )
+
+    if (-not (Test-Path -LiteralPath $FilePath)) {
+        throw "Document file not found: $FilePath"
+    }
+
+    Add-Type -AssemblyName System.Net.Http
+
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $resolvedFilePath = (Resolve-Path -LiteralPath $FilePath).Path
+    $response = $null
+    $content = $null
+
+    try {
+        $content = New-Object System.Net.Http.MultipartFormDataContent
+        $content.Add((New-Object System.Net.Http.StringContent("$($Config.chatID)")), "chat_id")
+        if (-not [string]::IsNullOrWhiteSpace($Caption)) {
+            $content.Add((New-Object System.Net.Http.StringContent($Caption)), "caption")
+        }
+
+        $bytes = [System.IO.File]::ReadAllBytes($resolvedFilePath)
+        $fileContent = [System.Net.Http.ByteArrayContent]::new($bytes)
+        $content.Add($fileContent, "document", [System.IO.Path]::GetFileName($resolvedFilePath))
+
+        $response = $client.PostAsync("https://api.telegram.org/bot$($Config.botToken)/sendDocument", $content).GetAwaiter().GetResult()
+        [void]$response.EnsureSuccessStatusCode()
+    } finally {
+        if ($response) {
+            $response.Dispose()
+        }
+        if ($content) {
+            $content.Dispose()
+        }
+        if ($client) {
+            $client.Dispose()
+        }
+        if ($handler) {
+            $handler.Dispose()
+        }
+    }
+}
+
+function Get-PcMonitorTelegramFileDownloadUrl {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FileId,
+        [Parameter(Mandatory = $true)]
+        [psobject]$Config
+    )
+
+    $result = Invoke-RestMethod -Uri "https://api.telegram.org/bot$($Config.botToken)/getFile?file_id=$FileId" -Method Get -ErrorAction Stop
+    if (-not $result.ok -or -not $result.result.file_path) {
+        throw "Unable to resolve Telegram file path."
+    }
+
+    return "https://api.telegram.org/file/bot$($Config.botToken)/$($result.result.file_path)"
+}
+
+function Save-PcMonitorTelegramDocument {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Document,
+        [Parameter(Mandatory = $true)]
+        [psobject]$Config,
+        [string]$DestinationDirectory,
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    Initialize-PcMonitorDataPaths -BasePath $BasePath | Out-Null
+
+    if ([string]::IsNullOrWhiteSpace($DestinationDirectory)) {
+        $DestinationDirectory = Get-PcMonitorDataPath -BasePath $BasePath -ChildPath "incoming"
+    }
+
+    if (-not (Test-Path -LiteralPath $DestinationDirectory)) {
+        [void](New-Item -ItemType Directory -Path $DestinationDirectory -Force)
+    }
+
+    $safeName = if ($Document.file_name) { [System.IO.Path]::GetFileName([string]$Document.file_name) } else { "$($Document.file_id).bin" }
+    $targetPath = Join-Path $DestinationDirectory $safeName
+    $downloadUrl = Get-PcMonitorTelegramFileDownloadUrl -FileId $Document.file_id -Config $Config
+
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $targetPath -ErrorAction Stop
+    return $targetPath
 }
 
 function Test-PcMonitorAdministrator {

@@ -7,6 +7,7 @@ param(
 
 try {
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
+    Initialize-PcMonitorDataPaths -BasePath $PSScriptRoot | Out-Null
 } catch {
     Write-Error $_
     exit 1
@@ -113,6 +114,15 @@ foreach ($proc in $topProcesses) {
     $processList += "`n  - $($proc.Name): $cpu s"
 }
 
+$activityEntries = @(Get-PcMonitorRecentActivity -BasePath $PSScriptRoot -Count 8)
+$activitySummary = if ($activityEntries.Count -gt 0) {
+    ($activityEntries | ForEach-Object {
+        "  - $($_.Timestamp) | $($_.Category) | $($_.Action)"
+    }) -join "`n"
+} else {
+    "  - No activity logged yet"
+}
+
 $report = @"
 [$reportTitle]
 
@@ -137,10 +147,14 @@ Shutdowns: $systemShutdowns
 Critical Errors: $criticalErrors
 
 === TOP PROCESSES (CPU) ===$processList
+
+=== COMMAND CENTRE ACTIVITY ===
+$activitySummary
 "@
 
 try {
     Send-PcMonitorTelegramMessage -Message $report -Config $config
+    Write-PcMonitorActivity -Category "report" -Action "$ReportType-report" -Detail "Report sent" -BasePath $PSScriptRoot
     Write-Host "$ReportType report sent successfully at $time"
     exit 0
 } catch {

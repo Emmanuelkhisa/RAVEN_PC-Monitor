@@ -2,6 +2,7 @@
 
 try {
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
+    Initialize-PcMonitorDataPaths -BasePath $PSScriptRoot | Out-Null
 } catch {
     Write-Error $_
     exit 1
@@ -99,6 +100,7 @@ $($alerts -join "`n`n---`n`n")
 
     try {
         Send-PcMonitorTelegramMessage -Message $message -Config $config
+        Write-PcMonitorActivity -Category "performance" -Action "performance-alert" -Detail "Alerts: $($alerts.Count)" -BasePath $PSScriptRoot
         Write-Host "Performance alert sent at $time"
         exit 0
     } catch {

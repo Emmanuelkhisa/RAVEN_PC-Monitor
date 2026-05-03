@@ -4,5 +4,7 @@
   "cpuThreshold": 90,
   "memoryThreshold": 90,
   "diskThreshold": 90,
-  "installPath": "C:\\path\\to\\Remote PC Monitor"
+  "installPath": "C:\\path\\to\\Remote PC Monitor",
+  "cameraDeviceName": "Integrated Camera",
+  "microphoneDeviceName": "Microphone Array (Realtek(R) Audio)"
 }
