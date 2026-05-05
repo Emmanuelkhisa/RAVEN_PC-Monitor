@@ -395,6 +395,27 @@ function Get-FfmpegPath {
     return Get-PcMonitorFfmpegPath -Config $config
 }
 
+function Test-MediaDeviceAvailability {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("video", "audio")]
+        [string]$DeviceType,
+        [Parameter(Mandatory = $true)]
+        [string]$ConfiguredName
+    )
+
+    $devices = Get-PcMonitorDirectShowDevices -Config $config
+    $available = if ($DeviceType -eq "video") { @($devices.Video) } else { @($devices.Audio) }
+    $match = $available | Where-Object { $_ -ieq $ConfiguredName } | Select-Object -First 1
+
+    if ($match) {
+        return $match
+    }
+
+    $availableList = if ($available.Count -gt 0) { $available -join ", " } else { "None detected" }
+    throw "Configured $DeviceType device '$ConfiguredName' was not found. Available $DeviceType devices: $availableList"
+}
+
 function Get-CameraSnapshot {
     $ffmpegPath = Get-FfmpegPath
     if (-not $ffmpegPath) {
@@ -405,13 +426,31 @@ function Get-CameraSnapshot {
         throw "cameraDeviceName is not configured in config.json."
     }
 
+    $cameraDeviceName = Test-MediaDeviceAvailability -DeviceType video -ConfiguredName $config.cameraDeviceName
     $targetPath = Join-Path $env:TEMP "camera_$(Get-Date -Format 'yyyyMMdd_HHmmss').jpg"
-    & $ffmpegPath -y -f dshow -i "video=$($config.cameraDeviceName)" -frames:v 1 $targetPath 2>$null | Out-Null
-    if (-not (Test-Path -LiteralPath $targetPath)) {
-        throw "Failed to capture camera snapshot."
+    $stderrPath = Join-Path $env:TEMP "camera_capture_$([guid]::NewGuid().ToString('N')).log"
+    try {
+        & $ffmpegPath -hide_banner -y -f dshow -i "video=$cameraDeviceName" -frames:v 1 $targetPath 2>$stderrPath | Out-Null
+        if (-not (Test-Path -LiteralPath $targetPath)) {
+            $ffmpegError = if (Test-Path -LiteralPath $stderrPath) {
+                (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue).Trim()
+            } else {
+                ""
+            }
+
+            if ([string]::IsNullOrWhiteSpace($ffmpegError)) {
+                throw "Failed to capture camera snapshot."
+            }
+
+            throw "Failed to capture camera snapshot. ffmpeg: $ffmpegError"
+        }
+    } finally {
+        if (Test-Path -LiteralPath $stderrPath) {
+            Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    Write-BotActivity -Action "camera-snapshot" -Detail $config.cameraDeviceName
+    Write-BotActivity -Action "camera-snapshot" -Detail $cameraDeviceName
     return $targetPath
 }
 
@@ -436,10 +475,28 @@ function Record-MicrophoneClip {
         throw "microphoneDeviceName is not configured in config.json."
     }
 
+    $microphoneDeviceName = Test-MediaDeviceAvailability -DeviceType audio -ConfiguredName $config.microphoneDeviceName
     $targetPath = Join-Path $env:TEMP "mic_$(Get-Date -Format 'yyyyMMdd_HHmmss').wav"
-    & $ffmpegPath -y -f dshow -i "audio=$($config.microphoneDeviceName)" -t $Seconds $targetPath 2>$null | Out-Null
-    if (-not (Test-Path -LiteralPath $targetPath)) {
-        throw "Failed to record microphone clip."
+    $stderrPath = Join-Path $env:TEMP "mic_capture_$([guid]::NewGuid().ToString('N')).log"
+    try {
+        & $ffmpegPath -hide_banner -y -f dshow -i "audio=$microphoneDeviceName" -t $Seconds $targetPath 2>$stderrPath | Out-Null
+        if (-not (Test-Path -LiteralPath $targetPath)) {
+            $ffmpegError = if (Test-Path -LiteralPath $stderrPath) {
+                (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue).Trim()
+            } else {
+                ""
+            }
+
+            if ([string]::IsNullOrWhiteSpace($ffmpegError)) {
+                throw "Failed to record microphone clip."
+            }
+
+            throw "Failed to record microphone clip. ffmpeg: $ffmpegError"
+        }
+    } finally {
+        if (Test-Path -LiteralPath $stderrPath) {
+            Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+        }
     }
 
     Write-BotActivity -Action "microphone-recording" -Detail "$Seconds seconds"

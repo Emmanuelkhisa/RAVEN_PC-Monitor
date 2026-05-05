@@ -296,6 +296,63 @@ function Install-PcMonitorFfmpeg {
     return $installedPath
 }
 
+function Get-PcMonitorDirectShowDevices {
+    [CmdletBinding()]
+    param(
+        [psobject]$Config
+    )
+
+    $ffmpegPath = Get-PcMonitorFfmpegPath -Config $Config
+    if (-not $ffmpegPath) {
+        throw "ffmpeg is not installed on this PC."
+    }
+
+    $stderrPath = Join-Path $env:TEMP "ffmpeg_devices_$([guid]::NewGuid().ToString('N')).log"
+    try {
+        & $ffmpegPath -hide_banner -list_devices true -f dshow -i dummy 2>$stderrPath | Out-Null
+        $deviceOutput = if (Test-Path -LiteralPath $stderrPath) {
+            Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
+        } else {
+            ""
+        }
+
+        $videoDevices = [System.Collections.Generic.List[string]]::new()
+        $audioDevices = [System.Collections.Generic.List[string]]::new()
+        $currentType = ""
+
+        foreach ($line in ($deviceOutput -split "`r?`n")) {
+            if ($line -match "DirectShow video devices") {
+                $currentType = "video"
+                continue
+            }
+
+            if ($line -match "DirectShow audio devices") {
+                $currentType = "audio"
+                continue
+            }
+
+            if ($line -match '"([^"]+)"') {
+                $deviceName = $Matches[1]
+                if ($currentType -eq "video") {
+                    [void]$videoDevices.Add($deviceName)
+                } elseif ($currentType -eq "audio") {
+                    [void]$audioDevices.Add($deviceName)
+                }
+            }
+        }
+
+        return [pscustomobject]@{
+            Video = @($videoDevices | Select-Object -Unique)
+            Audio = @($audioDevices | Select-Object -Unique)
+            Raw   = $deviceOutput
+        }
+    } finally {
+        if (Test-Path -LiteralPath $stderrPath) {
+            Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Enable-PcMonitorAuditing {
     [CmdletBinding()]
     param()
