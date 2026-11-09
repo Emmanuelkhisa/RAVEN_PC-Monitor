@@ -1,4 +1,5 @@
 . (Join-Path $PSScriptRoot "pc_monitor_common.ps1")
+. (Join-Path $PSScriptRoot "pc_monitor_network_inventory.ps1")
 
 try {
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
@@ -114,6 +115,15 @@ function Get-SystemStatus {
         Where-Object { $_.IPAddress -ne "127.0.0.1" -and $_.InterfaceAlias -notmatch "Loopback" } |
         Select-Object -First 1 -ExpandProperty IPAddress)
 
+    $tempLine = ""
+    try {
+        $temps = Get-PcMonitorTemperatureCelsius
+        if ($temps) {
+            $deg      = [char]176
+            $tempLine = "`nTemperature: $(($temps | ForEach-Object { "$_${deg}C" }) -join ' / ')"
+        }
+    } catch {}
+
     return @"
 [COMMAND CENTRE STATUS]
 
@@ -127,7 +137,7 @@ Active Window: $activeWindow
 CPU: $($cpu.Name)
 Load: $([math]::Round($cpu.LoadPercentage, 1))%
 Memory: $memUsed GB / $memTotal GB ($memPercent%)
-Disk C: $diskUsed GB / $diskTotal GB ($diskPercent%)
+Disk C: $diskUsed GB / $diskTotal GB ($diskPercent%)$tempLine
 "@
 }
 
@@ -581,12 +591,141 @@ function Suspend-PC {
     rundll32.exe powrprof.dll,SetSuspendState 0,1,0
 }
 
+function Send-InlineConfirmation {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt,
+        [Parameter(Mandatory = $true)]
+        [string]$ConfirmData
+    )
+
+    $url  = "https://api.telegram.org/bot$($config.botToken)/sendMessage"
+    $body = [ordered]@{
+        chat_id      = "$($config.chatID)"
+        text         = $Prompt
+        reply_markup = @{
+            inline_keyboard = @(
+                @(
+                    @{ text = "Yes, proceed"; callback_data = $ConfirmData },
+                    @{ text = "Cancel";       callback_data = "cancel" }
+                )
+            )
+        }
+    } | ConvertTo-Json -Depth 10
+
+    Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json; charset=utf-8" -ErrorAction Stop | Out-Null
+}
+
+function Confirm-CallbackQuery {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CallbackQueryId,
+        [string]$Text = ""
+    )
+
+    $url  = "https://api.telegram.org/bot$($config.botToken)/answerCallbackQuery"
+    $body = @{ callback_query_id = $CallbackQueryId }
+    if ($Text) { $body.text = $Text }
+    Invoke-RestMethod -Uri $url -Method Post -Body ($body | ConvertTo-Json) -ContentType "application/json; charset=utf-8" -ErrorAction SilentlyContinue | Out-Null
+}
+
+function Kill-RemoteProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Target
+    )
+
+    $killed = [System.Collections.Generic.List[string]]::new()
+    $failed = [System.Collections.Generic.List[string]]::new()
+
+    if ($Target -match '^\d+$') {
+        $pid = [int]$Target
+        try {
+            Stop-Process -Id $pid -Force -ErrorAction Stop
+            $killed.Add("PID $pid")
+        } catch {
+            $failed.Add("PID $pid`: $($_.Exception.Message)")
+        }
+    } else {
+        $procs = @(Get-Process -Name $Target -ErrorAction SilentlyContinue)
+        if ($procs.Count -eq 0) {
+            return "[ERROR] No process found matching: $Target"
+        }
+        foreach ($p in $procs) {
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction Stop
+                $killed.Add("$($p.Name) (PID $($p.Id))")
+            } catch {
+                $failed.Add("$($p.Name) (PID $($p.Id))`: $($_.Exception.Message)")
+            }
+        }
+    }
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+    if ($killed.Count -gt 0) { $parts.Add("[KILLED]`n" + ($killed -join "`n")) }
+    if ($failed.Count -gt 0) { $parts.Add("[FAILED]`n" + ($failed -join "`n")) }
+    Write-BotActivity -Action "kill-process" -Detail $Target
+    return ($parts -join "`n`n").Trim()
+}
+
+function Get-TasksStatus {
+    $taskDefs = Get-PcMonitorTaskDefinitions
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("[SCHEDULED TASKS]")
+    $lines.Add("")
+
+    foreach ($td in $taskDefs) {
+        $shortName = Split-Path $td.TaskName -Leaf
+        try {
+            $taskPath = "\PC Monitor\"
+            $info    = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $shortName -ErrorAction Stop
+            $taskObj = Get-ScheduledTask -TaskPath $taskPath -TaskName $shortName -ErrorAction Stop
+            $state   = $taskObj.State
+            $lastRun = if ($info.LastRunTime -and $info.LastRunTime -gt [datetime]"2000-01-01") {
+                $info.LastRunTime.ToString("MM-dd HH:mm")
+            } else { "Never" }
+            $code   = $info.LastTaskResult
+            $result = if ($code -eq 0) { "OK" } elseif ($code -eq 267009) { "Running" } else { "Err 0x{0:X8}" -f $code }
+            $lines.Add("$shortName | $state | $lastRun | $result")
+        } catch {
+            $lines.Add("$shortName | Not installed")
+        }
+    }
+
+    Write-BotActivity -Action "tasks-status"
+    return ($lines -join "`n")
+}
+
+function Register-UsbMonitor {
+    try {
+        $query     = "SELECT * FROM __InstanceCreationEvent WITHIN 3 WHERE TargetInstance ISA 'Win32_LogicalDisk' AND TargetInstance.DriveType = 2"
+        $configJson = $config | ConvertTo-Json -Compress
+        Register-WmiEvent -Query $query -SourceIdentifier "PcMonitorUsbWatch" -Action {
+            try {
+                $cfg    = $Event.MessageData | ConvertFrom-Json
+                $disk   = $EventArgs.NewEvent.TargetInstance
+                $letter = if ($disk.DeviceID) { $disk.DeviceID } else { "?" }
+                $label  = if ($disk.VolumeName) { $disk.VolumeName } else { "No Label" }
+                $sizeGB = [math]::Round([double]$disk.Size / 1GB, 2)
+                $msg    = "[ALERT] USB REMOVABLE DRIVE CONNECTED`n`nDrive: $letter ($label)`nSize: $sizeGB GB`nPC: $env:COMPUTERNAME`nTime: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+                $url    = "https://api.telegram.org/bot$($cfg.botToken)/sendMessage"
+                $body   = @{ chat_id = "$($cfg.chatID)"; text = $msg } | ConvertTo-Json
+                Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json; charset=utf-8" | Out-Null
+            } catch {}
+        } -MessageData $configJson | Out-Null
+        Write-BotActivity -Action "usb-monitor-registered"
+    } catch {
+        Write-Warning "USB monitoring unavailable: $($_.Exception.Message)"
+    }
+}
+
 function Get-HelpText {
     return @"
 PC Monitor Command Centre v3
 
 Observe
 /status
+/inventory
 /screenshot
 /camera
 /recordmic 60
@@ -603,9 +742,11 @@ Send a Telegram document to save it to the PC inbox.
 Caption it with /save documents to place it elsewhere.
 
 Control
+/kill chrome.exe  or  /kill 1234
 /open notepad
 /setclipboard hello world
 /type hello world
+/run Get-Service  (PowerShell)
 /ps Get-Process | Select-Object -First 5
 /cmd dir
 /lock
@@ -620,6 +761,7 @@ Automate
 Review
 /history 12
 /recent 10
+/tasks
 "@
 }
 
@@ -630,6 +772,7 @@ Write-Host "[INFO] Waiting for commands from Telegram..."
 try {
     Acquire-BotInstanceLock
     Reset-TelegramWebhook
+    Register-UsbMonitor
     Write-BotActivity -Action "bot-listener-started"
 } catch {
     Write-Error $_
@@ -646,6 +789,22 @@ try {
             foreach ($update in $updates.result) {
                 $lastUpdateId = $update.update_id
 
+                if (($update.PSObject.Properties.Name -contains "callback_query") -and $null -ne $update.callback_query) {
+                    $cbq = $update.callback_query
+                    if (Test-PcMonitorAuthorizedChat -ChatId "$($cbq.from.id)" -Config $config) {
+                        try { Confirm-CallbackQuery -CallbackQueryId $cbq.id } catch {}
+                        Write-BotActivity -Action "callback-query" -Detail $cbq.data
+
+                        switch ($cbq.data) {
+                            "confirm_shutdown" { Send-BotMessage -Message "[EXECUTED] PC shutting down..."; Start-Sleep -Seconds 2; Shutdown-PC }
+                            "confirm_restart"  { Send-BotMessage -Message "[EXECUTED] PC restarting...";   Start-Sleep -Seconds 2; Restart-PC }
+                            "confirm_sleep"    { Send-BotMessage -Message "[EXECUTED] PC entering sleep";  Start-Sleep -Seconds 2; Suspend-PC }
+                            "cancel"           { Send-BotMessage -Message "[CANCELLED] Action aborted." }
+                        }
+                    }
+                    continue
+                }
+
                 $message = $null
                 if (($update.PSObject.Properties.Name -contains "message") -and $null -ne $update.message) {
                     $message = $update.message
@@ -657,7 +816,7 @@ try {
                     continue
                 }
 
-                if (($message.PSObject.Properties.Name -notcontains "chat") -or "$($message.chat.id)" -ne "$($config.chatID)") {
+                if (($message.PSObject.Properties.Name -notcontains "chat") -or -not (Test-PcMonitorAuthorizedChat -ChatId "$($message.chat.id)" -Config $config)) {
                     continue
                 }
 
@@ -681,6 +840,22 @@ try {
                     }
                     "^/status$" {
                         Send-BotMessage -Message (Get-SystemStatus)
+                    }
+                    "^/inventory$" {
+                        $reportPath = $null
+                        try {
+                            $inventory = New-PcMonitorNetworkInventoryReport -BasePath $PSScriptRoot -PingNeighbors
+                            $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+                            $reportPath = Join-Path (Get-PcMonitorDataPath -BasePath $PSScriptRoot -ChildPath "outgoing") "network-inventory-$timestamp.txt"
+                            Set-Content -LiteralPath $reportPath -Value $inventory.Content -Encoding UTF8
+                            $caption = "Network inventory for $env:COMPUTERNAME. Neighbor-cache entries pinged: $($inventory.CurrentDeviceCount); routes: $($inventory.RouteCount). No ICMP reply does not prove a device is offline."
+                            Send-PcMonitorTelegramDocument -FilePath $reportPath -Config $config -Caption $caption
+                            Write-BotActivity -Action "network-inventory-report" -Detail "Neighbor entries: $($inventory.CurrentDeviceCount); routes: $($inventory.RouteCount)"
+                        } finally {
+                            if ($reportPath -and (Test-Path -LiteralPath $reportPath)) {
+                                Remove-Item -LiteralPath $reportPath -Force
+                            }
+                        }
                     }
                     "^/screenshot$" {
                         $screenshotPath = $null
@@ -757,30 +932,36 @@ try {
                         Open-RemoteTarget -Target $Matches[1]
                         Send-BotMessage -Message "[EXECUTED] Opened $($Matches[1])"
                     }
+                    "^/kill\s+(.+)$" {
+                        Send-BotMessage -Message (Kill-RemoteProcess -Target $Matches[1].Trim())
+                    }
+                    "^/run\s+(.+)$" {
+                        Send-BotMessage -Message (Invoke-RemotePowerShell -Command $Matches[1])
+                    }
                     "^/ps\s+(.+)$" {
                         Send-BotMessage -Message (Invoke-RemotePowerShell -Command $Matches[1])
                     }
                     "^/cmd\s+(.+)$" {
                         Send-BotMessage -Message (Invoke-RemoteCmd -Command $Matches[1])
                     }
+                    "^/tasks$" {
+                        Send-BotMessage -Message (Get-TasksStatus)
+                    }
                     "^/lock$" {
                         Send-BotMessage -Message "[EXECUTED] PC locked"
                         Lock-PC
                     }
                     "^/sleep$" {
-                        Send-BotMessage -Message "[EXECUTED] PC entering sleep"
-                        Start-Sleep -Seconds 2
-                        Suspend-PC
+                        Send-InlineConfirmation -Prompt "Put the PC to sleep?" -ConfirmData "confirm_sleep"
+                        Write-BotActivity -Action "confirm-request" -Detail "/sleep"
                     }
                     "^/shutdown$" {
-                        Send-BotMessage -Message "[EXECUTED] PC shutting down..."
-                        Start-Sleep -Seconds 2
-                        Shutdown-PC
+                        Send-InlineConfirmation -Prompt "Shut down the PC?" -ConfirmData "confirm_shutdown"
+                        Write-BotActivity -Action "confirm-request" -Detail "/shutdown"
                     }
                     "^/restart$" {
-                        Send-BotMessage -Message "[EXECUTED] PC restarting..."
-                        Start-Sleep -Seconds 2
-                        Restart-PC
+                        Send-InlineConfirmation -Prompt "Restart the PC?" -ConfirmData "confirm_restart"
+                        Write-BotActivity -Action "confirm-request" -Detail "/restart"
                     }
                     "^/routine\s+snapshot$" {
                         Invoke-RoutineSnapshot

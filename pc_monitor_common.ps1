@@ -29,6 +29,25 @@ function Get-PcMonitorConfig {
         throw "Failed to read configuration: $($_.Exception.Message)"
     }
 
+    if ($config.PSObject.Properties.Name -contains "botTokenProtected" -and -not [string]::IsNullOrWhiteSpace($config.botTokenProtected)) {
+        try {
+            $decrypted = Unprotect-PcMonitorSecret -ProtectedBase64 $config.botTokenProtected
+            if (-not [string]::IsNullOrWhiteSpace($decrypted)) {
+                if ($config.PSObject.Properties.Name -contains "botToken") {
+                    $config.botToken = $decrypted
+                } else {
+                    $config | Add-Member -NotePropertyName "botToken" -NotePropertyValue $decrypted
+                }
+            }
+        } catch {
+            if ($config.PSObject.Properties.Name -contains "botToken" -and -not [string]::IsNullOrWhiteSpace($config.botToken)) {
+                Write-Warning "Falling back to plaintext botToken because botTokenProtected could not be decrypted: $($_.Exception.Message)"
+            } else {
+                throw "Failed to decrypt botTokenProtected. Run setup_tasks.ps1 to re-encrypt: $($_.Exception.Message)"
+            }
+        }
+    }
+
     foreach ($requiredProperty in @("botToken", "chatID")) {
         if (-not ($config.PSObject.Properties.Name -contains $requiredProperty) -or [string]::IsNullOrWhiteSpace($config.$requiredProperty)) {
             throw "Missing required configuration value: $requiredProperty"
@@ -47,7 +66,15 @@ function Save-PcMonitorConfig {
     )
 
     $configPath = Get-PcMonitorConfigPath -BasePath $BasePath
-    $Config | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configPath -Encoding UTF8
+
+    $toSave = $Config | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    if (($toSave.PSObject.Properties.Name -contains "botTokenProtected") -and -not [string]::IsNullOrWhiteSpace($toSave.botTokenProtected)) {
+        if ($toSave.PSObject.Properties.Name -contains "botToken") {
+            $toSave.botToken = ""
+        }
+    }
+
+    $toSave | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configPath -Encoding UTF8
     return $configPath
 }
 
@@ -459,6 +486,210 @@ function Get-PcMonitorInstallPath {
     return [System.IO.Path]::GetFullPath($installPath)
 }
 
+function Copy-PcMonitorInstallation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath
+    )
+
+    $source = [System.IO.Path]::GetFullPath($SourcePath)
+    $destination = [System.IO.Path]::GetFullPath($DestinationPath)
+    if ($source.TrimEnd('\') -ieq $destination.TrimEnd('\')) {
+        return [pscustomobject]@{
+            Copied = $false
+            ConfigCreated = $false
+            CredentialsRequired = $false
+        }
+    }
+
+    foreach ($requiredPath in @("setup_tasks.ps1", "pc_monitor_common.ps1", "config.example.json", "tasks")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $source $requiredPath))) {
+            throw "Installation source is incomplete; missing $requiredPath in $source."
+        }
+    }
+
+    [void](New-Item -ItemType Directory -Path $destination -Force)
+    $excludedDirectories = @(".git", ".idea", "data")
+    $excludedFiles = @("network_state.json", "bot_commands.log", "setup_install_test.log")
+
+    foreach ($item in Get-ChildItem -LiteralPath $source -Force) {
+        if ($item.PSIsContainer) {
+            if ($item.Name -in $excludedDirectories) {
+                continue
+            }
+
+            Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force -ErrorAction Stop
+            continue
+        }
+
+        if ($item.Name -in $excludedFiles -or $item.Extension -eq ".log") {
+            continue
+        }
+
+        if ($item.Name -ieq "config.json") {
+            continue
+        }
+
+        Copy-Item -LiteralPath $item.FullName -Destination $destination -Force -ErrorAction Stop
+    }
+
+    $destinationConfigPath = Join-Path $destination "config.json"
+    $configCreated = $false
+    $credentialsRequired = $false
+    if (-not (Test-Path -LiteralPath $destinationConfigPath)) {
+        $sourceConfigPath = Join-Path $source "config.json"
+        $canUseSourceConfig = $false
+        $sourceConfig = $null
+
+        if (Test-Path -LiteralPath $sourceConfigPath) {
+            try {
+                $sourceConfig = Get-Content -LiteralPath $sourceConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+                $hasProtectedToken = ($sourceConfig.PSObject.Properties.Name -contains "botTokenProtected") -and
+                    -not [string]::IsNullOrWhiteSpace([string]$sourceConfig.botTokenProtected)
+                $hasPlainToken = ($sourceConfig.PSObject.Properties.Name -contains "botToken") -and
+                    -not [string]::IsNullOrWhiteSpace([string]$sourceConfig.botToken)
+
+                if ($hasProtectedToken -and -not $hasPlainToken) {
+                    try {
+                        [void](Unprotect-PcMonitorSecret -ProtectedBase64 $sourceConfig.botTokenProtected)
+                        $canUseSourceConfig = $true
+                    } catch {
+                        Write-Warning "The source bot token is protected for a different Windows installation; it cannot be transferred. A fresh config will be created."
+                    }
+                } elseif ($hasPlainToken) {
+                    $canUseSourceConfig = $true
+                }
+            } catch {
+                Write-Warning "The source config.json could not be read; a fresh config will be created. $($_.Exception.Message)"
+            }
+        }
+
+        if ($canUseSourceConfig) {
+            Copy-Item -LiteralPath $sourceConfigPath -Destination $destinationConfigPath -Force -ErrorAction Stop
+        } else {
+            if ($null -ne $sourceConfig) {
+                $freshConfig = $sourceConfig | ConvertTo-Json -Depth 10 | ConvertFrom-Json -ErrorAction Stop
+            } else {
+                $examplePath = Join-Path $source "config.example.json"
+                $freshConfig = Get-Content -LiteralPath $examplePath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+            }
+            $freshConfig.botToken = ""
+            $freshConfig.chatID = ""
+            if ($freshConfig.PSObject.Properties.Name -contains "botTokenProtected") {
+                $freshConfig.botTokenProtected = ""
+            }
+            if ($freshConfig.PSObject.Properties.Name -contains "installPath") {
+                $freshConfig.installPath = $destination
+            } else {
+                $freshConfig | Add-Member -NotePropertyName "installPath" -NotePropertyValue $destination
+            }
+            $freshConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $destinationConfigPath -Encoding UTF8
+            $credentialsRequired = $true
+        }
+
+        $configCreated = $true
+    }
+
+    return [pscustomobject]@{
+        Copied = $true
+        ConfigCreated = $configCreated
+        CredentialsRequired = $credentialsRequired
+    }
+}
+
+function Set-PcMonitorRuntimeDataPermissions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath
+    )
+
+    $dataPath = Join-Path $BasePath "data"
+    if (-not (Test-Path -LiteralPath $dataPath)) {
+        [void](New-Item -ItemType Directory -Path $dataPath -Force)
+    }
+
+    $acl = Get-Acl -LiteralPath $dataPath -ErrorAction Stop
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+        [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+    $userSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $systemSid = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")
+    $administratorsSid = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
+
+    $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $userSid,
+        [System.Security.AccessControl.FileSystemRights]::Modify,
+        $inheritance,
+        $propagation,
+        $allow
+    )
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $systemSid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        $inheritance,
+        $propagation,
+        $allow
+    )
+    $administratorsRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $administratorsSid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        $inheritance,
+        $propagation,
+        $allow
+    )
+
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetAccessRule($userRule)
+    $acl.SetAccessRule($systemRule)
+    $acl.SetAccessRule($administratorsRule)
+    Set-Acl -LiteralPath $dataPath -AclObject $acl -ErrorAction Stop
+}
+
+function Set-PcMonitorConfigFilePermissions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath
+    )
+
+    $configPath = Get-PcMonitorConfigPath -BasePath $BasePath
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        return
+    }
+
+    $acl = Get-Acl -LiteralPath $configPath -ErrorAction Stop
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+    $userSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $systemSid = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")
+    $administratorsSid = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
+    $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $userSid,
+        [System.Security.AccessControl.FileSystemRights]::Modify,
+        $allow
+    )
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $systemSid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        $allow
+    )
+    $administratorsRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $administratorsSid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        $allow
+    )
+
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetAccessRule($userRule)
+    $acl.SetAccessRule($systemRule)
+    $acl.SetAccessRule($administratorsRule)
+    Set-Acl -LiteralPath $configPath -AclObject $acl -ErrorAction Stop
+}
+
 function Send-PcMonitorTelegramMessage {
     [CmdletBinding()]
     param(
@@ -693,6 +924,11 @@ function Test-PcMonitorRequiredScripts {
         }
     }
 
+    $inventoryScript = Join-Path $InstallPath "pc_monitor_network_inventory.ps1"
+    if (-not (Test-Path -LiteralPath $inventoryScript)) {
+        $missingScripts += "pc_monitor_network_inventory.ps1"
+    }
+
     return $missingScripts | Sort-Object -Unique
 }
 
@@ -831,6 +1067,170 @@ function Open-PcMonitorTaskXml {
 
         throw "Failed to open task XML: $Path"
     }
+}
+
+function Protect-PcMonitorSecret {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Plaintext
+    )
+
+    Add-Type -AssemblyName System.Security
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Plaintext)
+    $protected = [System.Security.Cryptography.ProtectedData]::Protect(
+        $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
+    )
+    return [System.Convert]::ToBase64String($protected)
+}
+
+function Unprotect-PcMonitorSecret {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProtectedBase64
+    )
+
+    Add-Type -AssemblyName System.Security
+    $protected = [System.Convert]::FromBase64String($ProtectedBase64)
+    $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+        $protected, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
+    )
+    return [System.Text.Encoding]::UTF8.GetString($bytes)
+}
+
+function Test-PcMonitorAuthorizedChat {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ChatId,
+        [Parameter(Mandatory = $true)]
+        [psobject]$Config
+    )
+
+    if ("$($Config.chatID)" -eq $ChatId) {
+        return $true
+    }
+
+    if ($Config.PSObject.Properties.Name -contains "allowedChatIDs") {
+        foreach ($id in @($Config.allowedChatIDs)) {
+            if ("$id" -eq $ChatId) {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
+function Get-PcMonitorAlertStatePath {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    Initialize-PcMonitorDataPaths -BasePath $BasePath | Out-Null
+    return Get-PcMonitorDataPath -BasePath $BasePath -ChildPath "alert_state.json"
+}
+
+function Test-PcMonitorAlertCooldown {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AlertKey,
+        [int]$CooldownMinutes = 30,
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $statePath = Get-PcMonitorAlertStatePath -BasePath $BasePath
+    if (-not (Test-Path -LiteralPath $statePath)) {
+        return $false
+    }
+
+    try {
+        $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not ($state.PSObject.Properties.Name -contains $AlertKey)) {
+            return $false
+        }
+        $lastAlert = [datetime]$state.$AlertKey
+        return ((Get-Date) - $lastAlert).TotalMinutes -lt $CooldownMinutes
+    } catch {
+        return $false
+    }
+}
+
+function Update-PcMonitorAlertCooldown {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$AlertKey,
+        [string]$BasePath = $PSScriptRoot
+    )
+
+    $statePath = Get-PcMonitorAlertStatePath -BasePath $BasePath
+    $state = if (Test-Path -LiteralPath $statePath) {
+        try {
+            Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        } catch {
+            [pscustomobject]@{}
+        }
+    } else {
+        [pscustomobject]@{}
+    }
+
+    if ($state.PSObject.Properties.Name -contains $AlertKey) {
+        $state.$AlertKey = (Get-Date).ToString("o")
+    } else {
+        $state | Add-Member -NotePropertyName $AlertKey -NotePropertyValue (Get-Date).ToString("o")
+    }
+
+    $state | ConvertTo-Json -Compress | Set-Content -LiteralPath $statePath -Encoding UTF8
+}
+
+function Get-PcMonitorTemperatureCelsius {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $zones = Get-CimInstance -Namespace "root\wmi" -ClassName "MSAcpi_ThermalZoneTemperature" -ErrorAction Stop
+        $temps = @($zones | ForEach-Object {
+            $c = [math]::Round(($_.CurrentTemperature - 2732) / 10, 1)
+            if ($c -gt 0 -and $c -lt 150) { $c }
+        } | Where-Object { $null -ne $_ })
+        if ($temps.Count -gt 0) {
+            return $temps
+        }
+        return $null
+    } catch {
+        return $null
+    }
+}
+
+function Get-PcMonitorActivityInRange {
+    [CmdletBinding()]
+    param(
+        [string]$BasePath = $PSScriptRoot,
+        [Parameter(Mandatory = $true)]
+        [datetime]$StartTime,
+        [Parameter(Mandatory = $true)]
+        [datetime]$EndTime
+    )
+
+    $logPath = Get-PcMonitorActionLogPath -BasePath $BasePath
+    if (-not (Test-Path -LiteralPath $logPath)) {
+        return @()
+    }
+
+    return @(Get-Content -LiteralPath $logPath -Encoding UTF8 |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object {
+            try { $_ | ConvertFrom-Json } catch {}
+        } |
+        Where-Object {
+            $null -ne $_ -and
+            [datetime]$_.Timestamp -ge $StartTime -and
+            [datetime]$_.Timestamp -le $EndTime
+        })
 }
 
 function Install-PcMonitorTasks {

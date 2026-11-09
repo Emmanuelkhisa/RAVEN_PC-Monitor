@@ -114,14 +114,23 @@ foreach ($proc in $topProcesses) {
     $processList += "`n  - $($proc.Name): $cpu s"
 }
 
-$activityEntries = @(Get-PcMonitorRecentActivity -BasePath $PSScriptRoot -Count 8)
-$activitySummary = if ($activityEntries.Count -gt 0) {
-    ($activityEntries | ForEach-Object {
-        "  - $($_.Timestamp) | $($_.Category) | $($_.Action)"
-    }) -join "`n"
-} else {
-    "  - No activity logged yet"
-}
+$periodEntries = @(Get-PcMonitorActivityInRange -BasePath $PSScriptRoot -StartTime $startTime -EndTime $endTime)
+
+$alertsInPeriod      = ($periodEntries | Where-Object { $_.Action -match "alert" }).Count
+$botCommandsInPeriod = ($periodEntries | Where-Object { $_.Category -eq "bot" -and $_.Action -eq "command-received" }).Count
+$networkAlertsCount  = ($periodEntries | Where-Object { $_.Category -eq "network" -and $_.Action -match "alert" }).Count
+$performanceAlertsCount = ($periodEntries | Where-Object { $_.Category -eq "performance" -and $_.Action -match "alert" }).Count
+$eventAlertsCount    = ($periodEntries | Where-Object { $_.Category -eq "event" -and $_.Action -match "alert" }).Count
+
+$topCommandGroups = $periodEntries |
+    Where-Object { $_.Category -eq "bot" -and $_.Action -eq "command-received" } |
+    Group-Object { ($_.Detail -split "\s+")[0] } |
+    Sort-Object Count -Descending |
+    Select-Object -First 5
+
+$topCommandsText = if ($topCommandGroups) {
+    ($topCommandGroups | ForEach-Object { "  - $($_.Name): $($_.Count)x" }) -join "`n"
+} else { "  - No commands issued" }
 
 $report = @"
 [$reportTitle]
@@ -148,8 +157,16 @@ Critical Errors: $criticalErrors
 
 === TOP PROCESSES (CPU) ===$processList
 
-=== COMMAND CENTRE ACTIVITY ===
-$activitySummary
+=== ALERT SUMMARY ===
+Total Alerts: $alertsInPeriod
+  Performance: $performanceAlertsCount
+  Security Events: $eventAlertsCount
+  Network: $networkAlertsCount
+
+=== BOT ACTIVITY ===
+Commands Received: $botCommandsInPeriod
+Top Commands:
+$topCommandsText
 "@
 
 try {

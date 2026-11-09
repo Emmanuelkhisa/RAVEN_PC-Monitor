@@ -1,4 +1,5 @@
 . (Join-Path $PSScriptRoot "pc_monitor_common.ps1")
+. (Join-Path $PSScriptRoot "pc_monitor_network_inventory.ps1")
 
 try {
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
@@ -6,6 +7,13 @@ try {
 } catch {
     Write-Error $_
     exit 1
+}
+
+try {
+    $inventorySnapshot = New-PcMonitorNetworkInventoryReport -BasePath $PSScriptRoot
+    Write-Host "Passive network inventory updated: $($inventorySnapshot.CurrentDeviceCount) neighbor entries."
+} catch {
+    Write-Warning "Failed to update passive network inventory: $($_.Exception.Message)"
 }
 
 $stateFile = Join-Path $PSScriptRoot "network_state.json"

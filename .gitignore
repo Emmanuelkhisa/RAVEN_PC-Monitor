@@ -3,6 +3,7 @@ config.json
 
 # Network state cache
 network_state.json
+data/network_inventory_state.json
 
 # Windows thumbnail cache
 Thumbs.db
@@ -26,7 +27,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
-
+CLAUDE.md
 # Logs
 *.log
 

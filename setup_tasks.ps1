@@ -26,21 +26,71 @@ if (-not (Test-PcMonitorAdministrator)) {
 Write-Host "[INFO] Administrator session detected." -ForegroundColor Green
 Write-Host ""
 
+$installPath = [System.IO.Path]::GetFullPath((Join-Path $env:ProgramFiles "Microsoft Health\Remote PC Monitor"))
 try {
+    $copyResult = Copy-PcMonitorInstallation -SourcePath $PSScriptRoot -DestinationPath $installPath
+    if ($copyResult.Copied) {
+        Write-Host "[STEP] Installing project files to the fixed application directory..." -ForegroundColor Cyan
+        Write-Host "  [OK] Source: $PSScriptRoot" -ForegroundColor Green
+        Write-Host "  [OK] Destination: $installPath" -ForegroundColor Green
+        if ($copyResult.ConfigCreated) {
+            Write-Host "  [OK] Initialized installation config without overwriting existing target settings." -ForegroundColor Green
+        }
+        if ($copyResult.CredentialsRequired) {
+            Write-Host "[WARN] Fresh Telegram credentials are required on this Windows installation." -ForegroundColor Yellow
+        }
+
+        $installedSetupPath = Join-Path $installPath "setup_tasks.ps1"
+        $process = Start-Process -FilePath "powershell.exe" -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", "`"$installedSetupPath`"",
+            "-Elevated"
+        ) -Wait -PassThru -ErrorAction Stop
+        exit $process.ExitCode
+    }
+} catch {
+    Write-Host "[ERROR] Failed to stage the application in $installPath : $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+try {
+    Set-PcMonitorConfigFilePermissions -BasePath $PSScriptRoot
     $config = Get-PcMonitorConfig -BasePath $PSScriptRoot
+    if ($config.PSObject.Properties.Name -contains "installPath") {
+        $config.installPath = $installPath
+    } else {
+        $config | Add-Member -NotePropertyName "installPath" -NotePropertyValue $installPath
+    }
+    Save-PcMonitorConfig -Config $config -BasePath $PSScriptRoot | Out-Null
+    Set-PcMonitorRuntimeDataPermissions -BasePath $PSScriptRoot
     Initialize-PcMonitorDataPaths -BasePath $PSScriptRoot | Out-Null
-    $installPath = Get-PcMonitorInstallPath -BasePath $PSScriptRoot -Persist
     $botInfo = Test-PcMonitorTelegramConfiguration -BasePath $PSScriptRoot
 } catch {
     Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
     Write-Host ""
-    Write-Host "Create config.json from config.example.json and fill in your bot details." -ForegroundColor Yellow
+    Write-Host "Installation path: $([System.IO.Path]::GetFullPath((Join-Path $env:ProgramFiles 'Microsoft Health\Remote PC Monitor')))" -ForegroundColor Yellow
+    Write-Host "Edit config.json there with a valid botToken and chatID, then run setup_tasks.ps1 again." -ForegroundColor Yellow
     exit 1
 }
 
 Write-Host "[INFO] Installation Path: $installPath" -ForegroundColor Green
 Write-Host "[INFO] Telegram Bot: @$($botInfo.username)" -ForegroundColor Green
 Write-Host ""
+
+$configPath = Get-PcMonitorConfigPath -BasePath $PSScriptRoot
+try {
+    $currentConfig = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace([string]$currentConfig.botToken) -and
+        [string]::IsNullOrWhiteSpace([string]$currentConfig.botTokenProtected)) {
+        Write-Host "[ERROR] Telegram credentials are not configured." -ForegroundColor Red
+        Write-Host "Edit $configPath and set botToken and chatID, then rerun this installer." -ForegroundColor Yellow
+        exit 1
+    }
+} catch {
+    Write-Host "[ERROR] Could not read $configPath : $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
 
 $missingScripts = @(Test-PcMonitorRequiredScripts -InstallPath $installPath)
 if ($missingScripts.Count -gt 0) {
@@ -81,6 +131,44 @@ try {
     foreach ($taskName in $installedTasks) {
         Write-Host "  [OK] $taskName" -ForegroundColor Green
     }
+    Write-Host ""
+
+    Write-Host "[STEP] Removing old Watchdog task if present..." -ForegroundColor Cyan
+    if (-not (Test-PcMonitorAdministrator)) {
+        Write-Host "  [WARN] Cannot remove stale Watchdog task without administrator privileges." -ForegroundColor Yellow
+    } else {
+        & schtasks /query /tn "\PC Monitor\Watchdog" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            & schtasks /delete /tn "\PC Monitor\Watchdog" /f 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  [OK] Removed old Watchdog task" -ForegroundColor Green
+            }
+        }
+    }
+    Write-Host ""
+
+    Write-Host "[STEP] Securing bot credentials with DPAPI..." -ForegroundColor Cyan
+    try {
+        $currentConfig = Get-Content -LiteralPath (Get-PcMonitorConfigPath -BasePath $PSScriptRoot) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $alreadyProtected = ($currentConfig.PSObject.Properties.Name -contains "botTokenProtected") -and -not [string]::IsNullOrWhiteSpace($currentConfig.botTokenProtected)
+        if (-not $alreadyProtected) {
+            $plainToken = $currentConfig.botToken
+            $protectedToken = Protect-PcMonitorSecret -Plaintext $plainToken
+            if ($currentConfig.PSObject.Properties.Name -contains "botTokenProtected") {
+                $currentConfig.botTokenProtected = $protectedToken
+            } else {
+                $currentConfig | Add-Member -NotePropertyName "botTokenProtected" -NotePropertyValue $protectedToken
+            }
+            $currentConfig.botToken = ""
+            $currentConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Get-PcMonitorConfigPath -BasePath $PSScriptRoot) -Encoding UTF8
+            Write-Host "  [OK] Bot token encrypted (LocalMachine DPAPI)" -ForegroundColor Green
+        } else {
+            Write-Host "  [OK] Bot token already encrypted" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "  [WARN] Could not encrypt bot token: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "         The bot will continue using the plaintext token." -ForegroundColor Yellow
+    }
 } catch {
     Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
     exit 1
@@ -92,5 +180,6 @@ Write-Host "  Raven Setup Complete" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Raven is installed and ready." -ForegroundColor White
+Write-Host "Installation directory: $installPath" -ForegroundColor White
 Write-Host "Open Task Scheduler with: taskschd.msc" -ForegroundColor White
 Write-Host ""

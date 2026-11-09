@@ -81,6 +81,11 @@ switch ($event.Id) {
         $logonType = $eventData.LogonType
 
         if ($logonType -in @("2", "7", "10", "11")) {
+            $loginHour    = (Get-Date).Hour
+            $anomalyNote  = if ($loginHour -lt 6 -or $loginHour -ge 23) {
+                "`n`n[ANOMALY] Login outside normal hours (hour: $loginHour). Expected window: 06:00-23:00."
+            } else { "" }
+
             $message = @"
 [ALERT] PC LOGIN DETECTED
 
@@ -94,7 +99,7 @@ Logon Type: $(switch ($logonType) {
     "11" { "Cached Credentials" }
     default { $logonType }
 })
-Time: $time
+Time: $time$anomalyNote
 "@
         }
     }
