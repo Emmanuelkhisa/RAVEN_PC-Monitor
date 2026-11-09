@@ -1,24 +1,28 @@
 # Remote PC Monitor
 
-Windows PowerShell monitoring scripts that send alerts and reports through Telegram.
+Windows PC monitoring Tool that sends and reports through Telegram.
 
 ## Features
 
+- ##### RAT Remote Access Tool*
+- ##### Remote Control
+- ##### Camera snapshots and microphone recordings via `ffmpeg`
+- ##### Screenshot Capturing
+- ##### Network adapter, IP, and VPN change detection
+- ##### Remote PowerShell and CMD execution (`/run`, `/ps`, `/cmd`) - directly from telegram
 - Login and failed-login alerts with anomaly detection for off-hours logins
 - Event log tamper alerts
 - Process launch and file access monitoring
 - USB removable drive insertion alerts
 - CPU, memory, disk, network, and temperature health checks with configurable cooldowns (no repeat spam)
-- Network adapter, IP, and VPN change detection
 - Network inventory tracking with interface IPs, gateways, DNS, active routes, and cached neighbors; `/inventory` pings cached addresses on request
 - Telegram command centre: status, screenshots, file movement, clipboard, launching apps, typing text, process management, and power actions
 - Inline Yes/Cancel confirmation for destructive power commands (shutdown, restart, sleep)
-- Remote PowerShell and CMD execution (`/run`, `/ps`, `/cmd`)
 - Process kill by name or PID (`/kill`)
 - Scheduled task health dashboard (`/tasks`)
 - Telegram file inbox for sending files from phone to PC
 - Activity history shared across alerts, reports, and remote commands
-- Optional camera snapshots and microphone recordings via `ffmpeg`
+
 - Daily and weekly summary reports with alert counts and top command usage
 - Bot token encrypted on disk with DPAPI (machine-scoped, no plaintext at rest after setup)
 
@@ -83,7 +87,7 @@ auditpol /set /subcategory:"Other Logon/Logoff Events" /success:enable /failure:
 
 ### 5. Run setup
 
-The installer uses the script's location, not the terminal's current directory. Run it directly from the project folder on a USB drive, replacing `E:\Remote PC Monitor` with the actual USB path:
+The installer uses the script's location, not the terminal's current directory. Run it directly from the project folder or from a USB drive, replacing `E:\Remote PC Monitor` with the actual project path:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "E:\Remote PC Monitor\setup_tasks.ps1"
@@ -274,7 +278,7 @@ Go to `@BotFather` on Telegram, use `/mybots`, select your bot, and use **API To
 
 ## Changelog
 
-### Version 3.0 - 2026-07-02
+### Version 3.0 - 2026-09-11
 
 - Alert cooldowns: repeat performance alerts suppressed for a configurable window (default 30 min)
 - Temperature monitoring via WMI thermal zones; shown in `/status` and performance alerts
@@ -298,6 +302,6 @@ Go to `@BotFather` on Telegram, use `/mybots`, select your bot, and use **API To
 - Removed legacy and duplicate installer scripts
 - Consolidated shared logic into `pc_monitor_common.ps1`
 
-### Version 1.0
+### Version 1.0 2026-02-13
 
 - Basic login monitoring
